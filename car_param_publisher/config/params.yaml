@@ -1,0 +1,5 @@
+/car_param_node:
+  ros__parameters:
+    car_weight: 1000.0
+    front_ratio: 0.33
+    rear_ratio: 0.77
