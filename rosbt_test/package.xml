@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>bt_action_demo</name>
+  <version>0.15.4</version>
+  <description>testing ROS BT</description>
+  <maintainer email="xxx">x xml</maintainer>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  
+  <depend>rclcpp</depend>
+  <depend>behaviortree_cpp</depend>
+  <depend>behaviortree_ros2</depend>
+  <depend>example_interfaces</depend>
+
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
