@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<library path="my_robot_controllers">
+  <class
+    name="my_robot_controllers/CmdVelDiffDriveController"
+    type="my_robot_controllers::CmdVelDiffDriveController"
+    base_class_type="controller_interface::ControllerInterface">
+    <description>CmdVel to wheel velocity controller (custom)</description>
+  </class>
+</library>

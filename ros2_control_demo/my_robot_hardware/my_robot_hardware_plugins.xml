@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<library path="my_robot_hardware">
+  <class
+    name="my_robot_hardware/CanSystem"
+    type="my_robot_hardware::CanSystem"
+    base_class_type="hardware_interface::SystemInterface">
+    <description>CAN-based SystemInterface demo</description>
+  </class>
+</library>
