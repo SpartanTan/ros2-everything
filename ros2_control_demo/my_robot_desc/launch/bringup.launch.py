@@ -1,21 +1,26 @@
 from launch import LaunchDescription
 from launch.actions import RegisterEventHandler
 from launch.event_handlers import OnProcessExit
-from launch.substitutions import Command, FindExecutable, PathJoinSubstitution
+from launch.substitutions import Command, FindExecutable, PathJoinSubstitution, LaunchConfiguration
 
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description():
+
+    if_simulation = LaunchConfiguration("simulation")
+
     # robot_description (publish on /robot_description)
     robot_description_content = Command(
         [
-            PathJoinSubstitution([FindExecutable(name="cat")]),
+            PathJoinSubstitution([FindExecutable(name="xacro")]),
             " ",
             PathJoinSubstitution(
-                [FindPackageShare("my_robot_desc"), "urdf", "robot.urdf"]
+                [FindPackageShare("my_robot_desc"), "urdf", "robot.urdf.xacro"]
             ),
+            " ",
+            "simulation:=", if_simulation,
         ]
     )
     robot_description = {"robot_description": robot_description_content}
