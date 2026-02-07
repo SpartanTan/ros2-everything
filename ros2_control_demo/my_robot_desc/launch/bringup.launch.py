@@ -50,7 +50,11 @@ def generate_launch_description():
     joint_state_broadcaster_spawner = Node(
         package="controller_manager",
         executable="spawner",
-        arguments=["joint_state_broadcaster"],
+        arguments=[
+            "joint_state_broadcaster",
+            "--controller-manager", "/controller_manager",
+            "--param-file", robot_controllers,
+        ],
         output="screen",
     )
 
@@ -81,3 +85,4 @@ def generate_launch_description():
             delay_cmdvel_spawner_after_jsb,
         ]
     )
+

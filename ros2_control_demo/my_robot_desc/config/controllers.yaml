@@ -2,14 +2,20 @@ controller_manager:
   ros__parameters:
     update_rate: 100
 
-    joint_state_broadcaster:
-      type: joint_state_broadcaster/JointStateBroadcaster
-
-    cmdvel_diffdrive_controller:
-      type: my_robot_controllers/CmdVelDiffDriveController
+joint_state_broadcaster:
+  ros__parameters:
+    type: joint_state_broadcaster/JointStateBroadcaster
+    use_local_topics: True
+    joints:
+      - left_wheel_joint 
+      - right_wheel_joint
+    interfaces:
+      - position
+      - velocity
 
 cmdvel_diffdrive_controller:
   ros__parameters:
+    type: my_robot_controllers/CmdVelDiffDriveController
     left_wheel_joint: left_wheel_joint
     right_wheel_joint: right_wheel_joint
     wheel_radius: 0.10
