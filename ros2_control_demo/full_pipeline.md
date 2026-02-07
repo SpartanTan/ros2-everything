@@ -43,12 +43,13 @@ control_node = Node(
 ```
 `ros2_control_node` 是 controller_manager 的主节点，承担以下工作：
 
+- 启动`/controller_manager`节点，对外提供 controller 管理服务（load/configure/activate 等）
+- 读取 [`controllers.yaml`](#3-configcontrollersyaml) 中`controller_manager`命名空间的参数到自身参数服务器（用于 spawner/load_controller 等流程）
 - 通过`/robot_description` topic获取URDF
-- 解析 URDF 中 `<ros2_control>` 字段，生成硬件资源描述 
-- 解析 URDF 中 `<ros2_control>`，生成硬件资源描述`HardwareInfo`并用 pluginlib 加载硬件插件
-- 读取 [`controllers.yaml`](#3-configcontrollersyaml) 到自身参数服务器（用于 spawner/load_controller 等流程）
-- 对外提供 controller 管理服务（load/configure/activate 等）
+- 解析 URDF 中 `<ros2_control>`，生成硬件资源描述`HardwareInfo`，并根据`<hardware>`所配置的插件，用 pluginlib 加载硬件插件(本工程中为CanSystem)，然后调用`on_init`读取硬件参数；之后进入`configure/activate`等lifecyclenode的操作
 - 按 update_rate 运行控制循环：read → update → write
+
+到这一步controllers的定义已经被加载在参数中，但是controllers实例还没被加载。
 
 #### 1.2 `robot_state_publisher`
 它通过 `robot_description` 参数获得 `URDF`，发布 `/tf` 与 `/tf_static`，并将 `URDF` 发布到 `/robot_description`（供其他节点使用，包括 `ros2_control_node`）。
@@ -69,11 +70,21 @@ spawner 是一个“客户端工具程序”，它通过调用 `/controller_mana
 - `configure_controller`
 - `activate_controller`
 
+**`joint_state_broadcaster`**
+从hardware interface读取joint的states然后发布到`/joint_states`话题。  
+（注意和joint_state_publisher区分）
+```python
+joint_state_broadcaster_spawner = Node(
+    package="controller_manager",
+    executable="spawner",
+    arguments=["joint_state_broadcaster"],
+    output="screen",
+)
+```
 spawner 的 arguments 中传入的是 **控制器实例名**（instance name）：
 - `joint_state_broadcaster`
-- `cmdvel_diffdrive_controller`
 
-controller_manager 会根据 `controllers.yaml` 中该实例名对应的 `type` 字段去加载真实的插件类型（plugin type）。
+controller_manager 会根据 `controllers.yaml` 中该实例名"joint_state_broadcaster"对应的 `type` 字段去加载真实的插件类型（plugin type）。
 ```yaml
 controller_manager:
   ros__parameters:
@@ -81,17 +92,148 @@ controller_manager:
 
     joint_state_broadcaster: <<<<<----- 控制器实例名 controller instance name
       type: joint_state_broadcaster/JointStateBroadcaster <<<<<----- plugin lookup key
-
-    cmdvel_diffdrive_controller:
-      type: my_robot_controllers/CmdVelDiffDriveController
 ```
-因此，controller instance name可以随意修改，只要保证`controllers.yaml`中的与`launch`文件中传入的arguments部分一致即可。  
+因此，`controller instance name`可以随意修改，只要保证`controllers.yaml`中的与`launch`文件中传入的`arguments`部分一致即可。  
 而type所持有的字符串需要和`my_robot_controllers_plugins.xml`中`class name=`部分一致，跳转[这里](#cmdvel-controller-name)
 
-### 2. URDF 中 `<ros2_control>`
+`joint_state_broadcaster`负责广播hardware的states，发布`/joint_states`消息，`robot_state_publisher`会接收这些关节消息，然后转换为`\tf`后发布。
+
+
+**`cmdvel_controller_spawner`**
+```python
+cmdvel_controller_spawner = Node(
+    package="controller_manager",
+    executable="spawner",
+    arguments=[
+        "cmdvel_diffdrive_controller",
+        "--controller-manager", "/controller_manager",
+        "--param-file", robot_controllers,
+    ],
+    output="screen",
+)
+```
+根据`ros2_control` jazzy 版本的[release_notes](https://control.ros.org/jazzy/doc/ros2_control/doc/release_notes.html#:~:text=The%20controllers%20will%20now%20set%20use_global_arguments%20from%20NodeOptions%20to%20false%2C%20to%20avoid%20getting%20influenced%20by%20global%20arguments%20(Issue%20%3A%20%231684)%20(%231694).%20From%20now%20on%2C%20in%20order%20to%20set%20the%20parameters%20to%20the%20controller%2C%20the%20%2D%2Dparam%2Dfile%20option%20from%20spawner%20should%20be%20used.) , `--pram-file`这个参数是必须要在启动controller时提供。
+
+```txt
+From now on, in order to set the parameters to the controller, the --param-file option from spawner should be used.
+```
+### 2. `config/controllers.yaml`
+
+#### 2.2 controller_manager
+
+```yaml
+controller_manager:
+  ros__parameters:
+    update_rate: 100
+```
+#### 2.1 joint_state_broadcaster
+```yaml
+joint_state_broadcaster:
+  ros__parameters:
+    type: joint_state_broadcaster/JointStateBroadcaster
+    use_local_topics: True
+    joints:
+      - left_wheel_joint 
+      - right_wheel_joint
+    interfaces:
+      - position
+      - velocity
+```
+通过launch文件中`--param-file`导入
+```python
+joint_state_broadcaster_spawner = Node(
+    package="controller_manager",
+    executable="spawner",
+    arguments=[
+        "joint_state_broadcaster",
+        "--controller-manager", "/controller_manager",
+        "--param-file", robot_controllers,
+    ],
+    output="screen",
+)
+```
+`joints`字段下的内容必须和`urdf`中定义的joint name完全一致。  
+`use_local_topics`设为True后发布的话题变为`\joint_state_broadcaster\joint_states`，否则默认为`joint_states`
+
+
+#### 2.3 cmdvel_diffdrive_controller
+自定义控制器的参数文件
+```yaml
+cmdvel_diffdrive_controller:
+  ros__parameters:
+    left_wheel_joint: left_wheel_joint
+    right_wheel_joint: right_wheel_joint
+    wheel_radius: 0.10
+    wheel_separation: 0.40
+    cmd_timeout: 0.5
+```
+```
+参数名              参数值
+↓                   ↓
+left_wheel_joint : left_wheel_joint
+```
+参数名需要和`cmdvel_diffdrive_controller`的实现中所读取的变量名一致，即以下代码片段中的字符串部分。
+```c++
+
+controller_interface::CallbackReturn
+CmdVelDiffDriveController::on_configure(const rclcpp_lifecycle::State &)
+{
+  left_wheel_joint_ = get_node()->get_parameter("left_wheel_joint").as_string();
+  right_wheel_joint_ = get_node()->get_parameter("right_wheel_joint").as_string();
+  wheel_radius_ = get_node()->get_parameter("wheel_radius").as_double();
+  wheel_separation_ = get_node()->get_parameter("wheel_separation").as_double();
+  cmd_timeout_ = get_node()->get_parameter("cmd_timeout").as_double();
+
+}
+```
+右侧的参数值需要和URDF/ros2_control中定义的joint name一致，例如
+```xml
+<joint name="left_wheel_joint">
+  <command_interface name="velocity"/>
+  <state_interface name="position"/>
+  <state_interface name="velocity"/>
+</joint>
+```
+如果不一致，在controller active时报错
+```txt
+Could not find resource left_wheel_joint_typo/velocity
+```
+
+#### 2.4 threedofbot_position_controller
+上一节的差速控制器是”语义型”的，必须明确表示左轮/右轮对应的关节名称，否则无法计算。  
+但是，对于一些`Generic controller`，只要给出一列joints，
+```yaml
+threedofbot_position_controller:
+  ros__parameters:
+    type: forward_command_controller/ForwardCommandController
+    joints:
+      - threedofbot_joint1
+      - threedofbot_joint2
+      - threedofbot_joint3
+    interface_name: position
+```
+控制器会读取参数并进行配置
+```c++
+for (const auto & joint : params_.joints)
+{
+  command_interface_types_.push_back(joint + "/" + params_.interface_name);
+}
+
+ForwardControllersBase::command_interface_configuration() const
+{
+  controller_interface::InterfaceConfiguration command_interfaces_config;
+  command_interfaces_config.type = controller_interface::interface_configuration_type::INDIVIDUAL;
+  command_interfaces_config.names = command_interface_types_;
+
+  return command_interfaces_config;
+}
+```
+注意`ForwardCommandController`对于joint只支持一个interface，但是ros2_control的设计是支持多个interface的。
+
+### 3. URDF 中 `<ros2_control>`
+一切定义以URDF中的为准。
 
 URDF 中典型片段：
-
 ```xml
 <ros2_control name="MyRobotSystem" type="system">
   <hardware>
@@ -115,7 +257,7 @@ URDF 中典型片段：
 </ros2_control>
 ```
 
-#### 2.1 `<hardware>`
+#### 3.1 `<hardware>`
 **使用自定义硬件接口**
 
 `<plugin>`
@@ -172,7 +314,12 @@ if (info_.hardware_parameters.count("right_can_id")) {
 </hardware>
 ```
 `trigger_joint_command_threshold`要注意下，如果没有话题
-#### 2.2 `<joint>`
+#### 3.2 `<joint>`
+这里表达的是
+- 这个系统有哪些joint
+- 每个joint暴露哪些state/commmand interfaces
+- 硬件参数(CAN id, 减速比，限幅等)
+硬件层面的能力/资源清单
 ```xml
   <joint name="left_wheel_joint">
     <command_interface name="velocity"/>
@@ -195,32 +342,8 @@ if (info_.hardware_parameters.count("right_can_id")) {
 与hardware_interface对应部分[跳转](#hardware_interface-export)
 与hardware_interface对应部分[跳转](#hardware_interface-export)
 
-### 3. `config/controllers.yaml`
-```yaml
-controller_manager:
-  ros__parameters:
-    update_rate: 100
 
-    joint_state_broadcaster:
-      type: joint_state_broadcaster/JointStateBroadcaster
-
-    cmdvel_diffdrive_controller:
-      type: my_robot_controllers/CmdVelDiffDriveController
-
-cmdvel_diffdrive_controller:
-  ros__parameters:
-    left_wheel_joint: left_wheel_joint
-    right_wheel_joint: right_wheel_joint
-    wheel_radius: 0.10
-    wheel_separation: 0.40
-    cmd_timeout: 0.5
-
-```
-
-
-
-
-## 3. my_robot_hardware
+## my_robot_hardware
 
 ### cpp实现
 - 接口导出 <a id="hardware_interface-export"></a> 
@@ -327,7 +450,7 @@ Controllers
 这样并不是real-time，不适合高频控制。  
 但是适合差速底盘/移动机器人/中低频控制（20~100Hz）/仿真
 
-## 4. my_robot_controllers
+## my_robot_controllers
 
 ### my_robot_controllers.xml
 插件导出时的命名规范为
@@ -380,261 +503,3 @@ diff_drive_controller/DiffDriveController
     ```
 
 ---------
-
-
-3. 硬件插件初始化：on_init() 与 info_ 的来源
-
-硬件插件通常继承：
-
-hardware_interface::SystemInterface
-
-3.1 info_ 是谁持有的
-
-info_ 是硬件对象实例内部的成员变量（由基类 HardwareComponentInterface 持有，通常为 protected）：
-
-每个硬件实例对应一个 info_
-
-生命周期与硬件对象一致
-
-3.2 为什么要在子类中调用 SystemInterface::on_init(info)
-
-典型写法：
-
-hardware_interface::CallbackReturn CanSystem::on_init(const hardware_interface::HardwareInfo& info)
-{
-  if (hardware_interface::SystemInterface::on_init(info) != hardware_interface::CallbackReturn::SUCCESS) {
-    return hardware_interface::CallbackReturn::ERROR;
-  }
-
-  // 之后可用 info_ 读取 URDF 中 <hardware><param> 注入的参数
-  if (info_.hardware_parameters.count("can_interface")) {
-    can_interface_ = info_.hardware_parameters["can_interface"];
-  }
-  return hardware_interface::CallbackReturn::SUCCESS;
-}
-
-
-调用 SystemInterface::on_init(info) 的作用：
-
-执行基类通用初始化逻辑
-
-将 info 拷贝进基类的 info_（更底层实现中会看到 info_ = hardware_info; 或 info_ = params.hardware_info;）
-
-解析接口描述（joint_state_interfaces_ / joint_command_interfaces_ 等），供框架后续校验与管理
-
-如果不调用基类 on_init()：
-
-info_ 可能为空/未初始化
-
-通用解析不发生
-
-后续接口注册或 controller 激活可能失败
-
-4. 导出接口：export/on_export_* 与“字符串绑定 + 指针执行”
-
-硬件需要把可被控制器访问的“状态量/控制量”导出为接口对象。
-
-4.1 StateInterface：状态量导出
-
-（Humble 旧接口）：
-
-states.emplace_back("left_wheel_joint", "position", &left_pos_);
-
-
-（Jazzy 新接口）：
-
-return { std::make_shared<StateInterface>("left_wheel_joint", "position", &left_pos_), ... };
-
-
-含义分两部分：
-
-字符串键："left_wheel_joint" + "position"
-
-数据地址：&left_pos_
-
-字符串用于“匹配”，指针用于“执行”。
-
-4.2 CommandInterface：控制量导出
-
-同理：
-
-cmds.emplace_back("left_wheel_joint", "velocity", &cmd_left_vel_);
-
-
-这个 &cmd_left_vel_ 是关键：控制器最终写入的就是这个地址。
-
-5. controllers.yaml：实例名（name）与插件类型（type）
-
-典型：
-
-controller_manager:
-  ros__parameters:
-    joint_state_broadcaster:
-      type: joint_state_broadcaster/JointStateBroadcaster
-
-    cmdvel_diffdrive_controller:
-      type: my_robot_controllers/CmdVelDiffDriveController
-
-
-joint_state_broadcaster / cmdvel_diffdrive_controller：控制器实例名
-
-type: xxx/yyy：pluginlib 插件类型标识符（决定加载哪个库/哪个类）
-
-spawner arguments 传入的是实例名；controller_manager 根据实例名查到 type，再通过 pluginlib 创建对象。
-
-6. 控制器参数：left_wheel_joint: left_wheel_joint 的含义
-
-例：
-
-cmdvel_diffdrive_controller:
-  ros__parameters:
-    left_wheel_joint: left_wheel_joint
-
-
-左边 left_wheel_joint：ROS parameter 名
-
-右边 left_wheel_joint：parameter 的字符串值（通常对应 URDF joint 名）
-
-控制器代码中：
-
-auto_declare<std::string>("left_wheel_joint", left_wheel_joint_);
-
-
-含义是：
-
-声明参数 left_wheel_joint
-
-默认值为 left_wheel_joint_ 当前内容
-
-若 yaml 提供了该参数，则 yaml 值覆盖默认值
-
-之后一般在 on_configure() 中读取：
-
-left_wheel_joint_ = get_node()->get_parameter("left_wheel_joint").as_string();
-
-7. 运行时控制循环：read → update → write
-
-ros2_control_node（controller_manager）按固定频率执行控制循环：
-
-hardware.read(time, period)
-
-controller.update(time, period)（所有 active controllers）
-
-hardware.write(time, period)
-
-7.1 关节反馈数据从哪里来（JointStateBroadcaster）
-
-JointStateBroadcaster 并不读 CAN
-
-它读取的是硬件导出的 StateInterface（指针指向 left_pos_ / left_vel_ ...）
-
-这些变量的更新来自 CanSystem::read() 解析 CAN 报文
-
-因此：
-
-是的：真实系统中 /joint_states 的数值通常来自 CanSystem::read() 从 CAN 收到并解析的反馈帧
-
-如果 read() 不更新变量，则 /joint_states 将保持不变（常为 0）
-
-7.2 控制命令 cmd_left_vel_ 从哪里来
-
-控制器在 update() 中计算出 omega_l/omega_r
-
-通过 LoanedCommandInterface::set_value() 写入 CommandInterface 的指针
-
-指针指向硬件对象内部的 cmd_left_vel_ / cmd_right_vel_
-
-因此：
-
-cmd_left_vel_ 的值来自控制器
-
-硬件在 write() 中读取它并发送
-
-8. CAN 收发应放在哪里
-8.1 on_configure()：打开 CAN 通道并做轻量自检
-
-建议做：
-
-打开 SocketCAN / 厂商通道
-
-设置非阻塞/超时
-
-读一次心跳或发一次“读状态”请求确认通信
-
-不建议在 on_init() 做 IO。
-
-8.2 write() / send_can_velocity：发送控制命令帧
-
-真实系统中 send_can_velocity() 内部就应该调用 CAN 驱动 API，例如：
-
-SocketCAN：构造 struct can_frame，::write(fd, ...)
-
-厂商 SDK：Transmit(...)
-
-建议：
-
-send_can_velocity 只负责“打包 + 发一帧”
-
-write() 中决定发哪些帧、频率、限幅、安全策略
-
-8.3 read()：接收反馈帧并更新 state 变量
-
-真实系统中 read() 应：
-
-非阻塞读取（避免卡住控制周期）
-
-解析反馈帧更新 left_pos_ / left_vel_ 等
-
-超时/错误计数与故障策略（必要时返回 ERROR 或进入安全模式）
-
-9. 一次完整链路示例（从 /cmd_vel 到 CAN，再到 /joint_states）
-
-外部节点发布 /cmd_vel
-
-CmdVelDiffDriveController 订阅 /cmd_vel，在 update() 计算：
-
-左轮角速度 omega_l
-
-右轮角速度 omega_r
-
-控制器通过 set_value() 写入：
-
-*(&cmd_left_vel_) = omega_l
-
-*(&cmd_right_vel_) = omega_r
-
-同周期 CanSystem::write() 读取 cmd_left_vel_ / cmd_right_vel_：
-
-打包为 CAN 帧并发送到总线
-
-电机驱动回传编码器/速度状态帧
-
-CanSystem::read() 接收并解析 CAN 反馈，更新：
-
-left_pos_ / left_vel_ / right_pos_ / right_vel_
-
-JointStateBroadcaster 读取 StateInterface 指向的这些变量并发布 /joint_states
-
-10. 关键约束与常见错误
-
-joint 名必须与 URDF 完全一致（字符串匹配失败会导致 controller 激活失败）
-
-CanSystem::on_init() 必须调用 SystemInterface::on_init(...)（否则 info_ 未填充，接口解析缺失）
-
-read() 不更新 state 变量 → /joint_states 不动
-
-right_can_id key 拼写错误会导致读取失败（例如 rihgt_can_id）
-
-11. 术语快速对照
-
-URDF joint name：系统中关节的唯一名称源头
-
-hardware_parameters：URDF <hardware><param> 注入到 info_.hardware_parameters
-
-StateInterface / CommandInterface：字符串键 + 指针地址的接口对象
-
-Controller instance name：spawner 使用的名字（yaml 顶层键）
-
-Controller type：pluginlib 类型标识（决定加载哪个 C++ 类）
-
-read/update/write：实时控制循环固定顺序
