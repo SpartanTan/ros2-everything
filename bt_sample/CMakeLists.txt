@@ -9,18 +9,31 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(behaviortree_cpp REQUIRED)
+find_package(ament_index_cpp REQUIRED)
 
 add_executable(first_tree src/main.cpp)
-ament_target_dependencies(first_tree behaviortree_cpp rclcpp)
+ament_target_dependencies(first_tree behaviortree_cpp rclcpp ament_index_cpp)
 install(TARGETS
   first_tree
   DESTINATION lib/${PROJECT_NAME})
 
 
-add_executable(second_tree src/saysomething.cpp)
-ament_target_dependencies(second_tree behaviortree_cpp rclcpp)
+add_executable(say_something src/saysomething.cpp)
+ament_target_dependencies(say_something behaviortree_cpp rclcpp ament_index_cpp)
 install(TARGETS
-  second_tree
+  say_something
+  DESTINATION lib/${PROJECT_NAME})
+
+add_executable(generic_ports src/generic_ports.cpp)
+ament_target_dependencies(generic_ports behaviortree_cpp rclcpp ament_index_cpp)
+install(TARGETS
+  generic_ports
+  DESTINATION lib/${PROJECT_NAME})
+
+add_executable(reactive_behaviors src/reactive_behaviors.cpp)
+ament_target_dependencies(reactive_behaviors behaviortree_cpp rclcpp ament_index_cpp)
+install(TARGETS
+  reactive_behaviors
   DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY trees/

@@ -7,7 +7,7 @@
 - `my_robot_controllers`：`controller_interface::ControllerInterface` 插件（例如 `CmdVelDiffDriveController`）
 
 注意存放urdf的包名一定**不能包含**"robot_description"，似乎会和ros自己的`\robot_description`冲突。  
-`my_robot_description`这种就会造成在launch时参数加载报错，从而无法加载任何controller！！
+`my_robot_description`这种就会造成在launch时参数加载报错，从而无法加载任何controller！！  
 （以上这句可能并不完全成立，实际情况有可能是`controllers.yaml`这个文件的绝对路径不能存在"robot_description"字符串）
 
 目标链路：
