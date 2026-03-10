@@ -1,0 +1,11 @@
+<root>
+  <include path="./subtree_A.xml" />
+  <include path="./subtree_B.xml" />
+  <BehaviorTree ID="MainTree">
+    <Sequence>
+      <SaySomething message="starting MainTree" />
+      <SubTree ID="SubTreeA" />
+      <SubTree ID="SubTreeB" />
+    </Sequence>
+  </BehaviorTree>
+</root>

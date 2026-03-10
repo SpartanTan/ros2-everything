@@ -1,0 +1,8 @@
+<root BTCPP_format="4" >
+  <BehaviorTree ID="SegmentCup">
+      <Sequence>
+          <AcquirePointCloud  cloud="{pointcloud}"/>
+          <SegmentObject  obj_name="cup" cloud="{pointcloud}" obj_pose="{pose}"/>
+      </Sequence>
+  </BehaviorTree>
+</root>

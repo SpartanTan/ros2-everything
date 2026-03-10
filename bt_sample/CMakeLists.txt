@@ -36,6 +36,19 @@ install(TARGETS
   reactive_behaviors
   DESTINATION lib/${PROJECT_NAME})
 
+add_executable(logger src/logger.cpp)
+ament_target_dependencies(logger behaviortree_cpp rclcpp ament_index_cpp)
+install(TARGETS
+  logger
+  DESTINATION lib/${PROJECT_NAME})
+
+#.......####.##....##..######..########....###....##.......##......
+#........##..###...##.##....##....##......##.##...##.......##......
+#........##..####..##.##..........##.....##...##..##.......##......
+#........##..##.##.##..######.....##....##.....##.##.......##......
+#........##..##..####.......##....##....#########.##.......##......
+#........##..##...###.##....##....##....##.....##.##.......##......
+#.......####.##....##..######.....##....##.....##.########.########
 install(DIRECTORY trees/
   DESTINATION share/${PROJECT_NAME}/trees
 )

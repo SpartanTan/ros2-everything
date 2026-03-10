@@ -1,0 +1,21 @@
+<root BTCPP_format="4" >
+  <TreeNodeModel>
+    <SubTree ID="MoveRobot">
+      <input_port name="target" default="{move_goal}"/>
+      <input_port name="frame" default="world" />
+      <output_port name="result" default="{error_code}" />
+    </SubTree>
+  </TreeNodeModel>
+
+  <SubTree ID="MoveRobot" frame="map" />
+
+  <!-- same names of entries  -->
+  <SubTree ID="MoveRobot" target="{target}"  frame="{frame}" result="{result}" />
+
+  <!-- can be replaced by -->
+  <SubTree ID="MoveRobot" _autoremap="true" />
+
+  <!-- can override some and autoremap the others-->
+  <SubTree ID="MoveRobot" _autoremap="true" frame="world" />
+
+</root>

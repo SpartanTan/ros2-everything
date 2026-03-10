@@ -1,0 +1,35 @@
+<!-- This checks the condition on every tick -->
+<Precondition if="battery_ok" else="RUNNING">
+    <MoveToGoal/>
+</Precondition>
+
+<!-- This checks the condition ONLY when MoveToGoal starts -->
+<MoveToGoal _successIf="battery_ok"/>
+
+<!-- old version-->
+<Fallback>
+  <Sequence>
+      <MoveBase  goal="{target}"/>
+      <SetBlackboard output_key="result" value="0" />
+  </Sequence>
+  <ForceFailure>
+      <SetBlackboard output_key="result" value="-1" />
+  </ForceFailure>
+</Fallback>
+
+<!-- new version -->
+<MoveBase goal="{target}"
+          _onSuccess="result:=OK"
+          _onFailure="result:=ERROR"/>
+
+<!-- design patten: ERROR code -->
+<Sequence>
+    <MoveBase  goal="{target}" error_code="{error_code}"/>
+    <RecoveryOne _skipIf="{error_code}!=1"/>
+    <RecoveryTwo _skipIf="{error_code}!=2"/>
+</Sequence>
+
+<!-- design patten: states and declarative trees-->
+<LowerAltitude _skipIf="state != DO_LANDING"
+               drone_altitude="{altitude}"
+               _post="state = (altitude <= 0.1) ? LANDED : state"/>

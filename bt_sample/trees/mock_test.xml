@@ -1,0 +1,22 @@
+<root BTCPP_format="4" >
+  <BehaviorTree ID="MainTree">
+    <Sequence>
+      <SaySomething name="talk" message="hello world"/>
+      <Fallback>
+        <AlwaysFailure name="failing_action"/>
+        <SubTree ID="MySub" name="mysub"/>
+      </Fallback>
+      <SaySomething message="before last_action"/>
+      <Script code="msg:='after last_action'"/>
+      <AlwaysSuccess name="last_action"/>
+      <SaySomething message="{msg}"/>
+    </Sequence> 
+  </BehaviorTree>
+
+  <BehaviorTree ID="MySub">
+    <Sequence>
+      <AlwaysSuccess name="action_subA"/>
+      <AlwaysSuccess name="action_subB"/>
+    </Sequence>
+  </BehaviorTree>
+</root>
