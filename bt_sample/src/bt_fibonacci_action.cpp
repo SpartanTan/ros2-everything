@@ -1,4 +1,5 @@
 #include "action_tutorials_interfaces/action/fibonacci.hpp"
+#include "nav2_behavior_tree/behavior_tree_engine.hpp"
 #include "nav2_behavior_tree/bt_action_node.hpp"
 
 using Fibonacci = action_tutorials_interfaces::action::Fibonacci;
@@ -27,3 +28,15 @@ public:
     return true;
   }
 };
+
+int main()
+{
+  BT::BehaviorTreeFactory factory;
+  auto node = std::make_shared<rclcpp::Node>("fibonacci_action_client");
+  RosNodeParams params;
+  params.nh = node;
+  params.default_port_value = "fibonacci";
+  factory.registerNodeType<FibonacciAction>("Fibonacci", params);
+
+  return 0;
+}

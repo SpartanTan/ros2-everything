@@ -137,3 +137,20 @@ int main()
   }
   return 0;
 }
+
+// expected output 
+/*
+--- ticking
+[ Battery: OK ]
+Robot says: mission started...
+[ MoveBase: SEND REQUEST ]. goal: x=1.0 y=2.0 theta=3.0
+--- status: RUNNING
+
+--- ticking
+--- status: RUNNING
+
+--- ticking
+[ MoveBase: FINISHED ]
+Robot says: mission completed!
+--- status: SUCCESS
+*/

@@ -153,6 +153,20 @@ It provides task-specific logic:
 - publishing feedback
 - optional `/goal_pose` topic bridge
 
+Important summary:
+
+- `bt_navigator` does not directly instantiate `BehaviorTreeNavigator`
+  itself.
+- `bt_navigator` loads plugins of base type `NavigatorBase`.
+- one concrete plugin is `NavigateToPoseNavigator`
+- `NavigateToPoseNavigator` inherits from:
+
+```cpp
+BehaviorTreeNavigator<nav2_msgs::action::NavigateToPose>
+```
+
+- therefore its action type is `nav2_msgs::action::NavigateToPose`
+
 #### `configure()`
 
 This is the derived-class extension point. It does not create the main action
@@ -220,6 +234,17 @@ Role:
 - Owns the behavior tree engine, blackboard, and current BT tree
 - Executes the BT whenever an action goal is received
 
+For `NavigateToPoseNavigator`, this becomes:
+
+```cpp
+BtActionServer<nav2_msgs::action::NavigateToPose>
+```
+
+And this means:
+
+- the navigator plugin owns a BT-aware action server
+- that action server internally owns a `SimpleActionServer<nav2_msgs::action::NavigateToPose>`
+
 Owns:
 
 - `std::shared_ptr<ActionServer> action_server_`
@@ -239,6 +264,45 @@ These are not ROS 2 native action callbacks.
 
 They are Nav2 business-level callbacks used after the ROS action goal has
 already been accepted by the underlying action server.
+
+### 4.1 How the top-level `navigate_to_pose` action server is created
+
+This is one of the most important chains in the whole framework.
+
+`BehaviorTreeNavigator<ActionT>::on_configure()` creates:
+
+```cpp
+bt_action_server_ = std::make_unique<nav2_behavior_tree::BtActionServer<ActionT>>(
+  node,
+  getName(),
+  ...
+);
+```
+
+For `NavigateToPoseNavigator`, `ActionT` is:
+
+```cpp
+nav2_msgs::action::NavigateToPose
+```
+
+and `getName()` returns:
+
+```cpp
+"navigate_to_pose"
+```
+
+Therefore this chain is formed:
+
+```text
+NavigateToPoseNavigator
+-> owns BtActionServer<nav2_msgs::action::NavigateToPose>
+-> BtActionServer owns SimpleActionServer<nav2_msgs::action::NavigateToPose>
+-> SimpleActionServer creates rclcpp_action::Server<nav2_msgs::action::NavigateToPose>
+-> action name is "navigate_to_pose"
+```
+
+So yes, the final top-level ROS 2 action server name comes from the hardcoded
+`getName()` implementation in `NavigateToPoseNavigator`.
 
 #### `executeCallback()`
 
@@ -319,6 +383,49 @@ Relationship to `BtActionServer`:
 - `SimpleActionServer` handles ROS 2 action protocol
 - `BtActionServer` handles business logic and BT execution
 
+### 5.1 Where `handle_goal`, `handle_cancel`, and `handle_accepted` fit
+
+These three methods are implemented in `SimpleActionServer`, not in
+`NavigateToPoseNavigator`.
+
+They are the native ROS 2 action server callbacks used by:
+
+```cpp
+rclcpp_action::create_server<ActionT>(...)
+```
+
+Flow:
+
+- `handle_goal()`
+  - accepts or rejects the goal
+- `handle_cancel()`
+  - accepts or rejects cancellation
+- `handle_accepted()`
+  - starts asynchronous execution
+
+`handle_accepted()` does not directly tick the behavior tree itself.
+
+Instead it starts a worker thread, and that worker thread eventually calls:
+
+```cpp
+execute_callback_()
+```
+
+For `BtActionServer`, `execute_callback_()` is:
+
+```cpp
+BtActionServer::executeCallback()
+```
+
+That is the actual entry point that then calls:
+
+- `on_goal_received_callback_()`
+- `bt_->run(...)`
+
+So the BT is ultimately triggered from the accepted-goal path, but indirectly
+through `SimpleActionServer -> work() -> execute_callback_() ->
+BtActionServer::executeCallback()`.
+
 ## From `NavigateToPose` Goal to Behavior Tree
 
 There are two goal entry paths:
@@ -347,6 +454,9 @@ After both paths merge:
 2. `initializeGoalPose()` writes blackboard `"goal"`
 3. `BtActionServer::executeCallback()` runs the tree
 
+At this point, the top-level `navigate_to_pose` action is active and remains in
+the ROS 2 `RUNNING` / executing state while the BT is running.
+
 ## Behavior Tree XML
 
 Typical file:
@@ -367,6 +477,34 @@ Interpretation:
 - `FollowPath` consumes `{path}`
 
 This is the main bridge from top-level task goal to lower-level execution.
+
+## High-Level Summary
+
+This is the most important compact mental model:
+
+- a navigator plugin creates a top-level action server, such as
+  `navigate_to_pose`
+- after it receives a request, it starts running a behavior tree
+- that behavior tree contains BT plugins such as `ComputePathToPose` and
+  `FollowPath`
+- those BT plugins read parameters from BT ports / blackboard
+- then they send lower-level ROS 2 action requests through their internal
+  action clients
+- `ComputePathToPose` talks to the planner server
+- `FollowPath` talks to the `follow_path` action server, which is implemented
+  by `controller_server`
+- `controller_server` then calls its internal controller algorithm plugins and
+  publishes `cmd_vel`
+
+This is the core Nav2 decomposition:
+
+```text
+top-level task action
+-> behavior tree orchestration
+-> lower-level action servers
+-> internal algorithm plugins
+-> robot command output
+```
 
 ## BT Action Node Plugins
 
@@ -512,6 +650,10 @@ Important:
 ```cpp
 action_client_->async_send_goal(goal_, send_goal_options);
 ```
+
+This is why `FollowPath` can be thought of as similar to a long-running BT node
+such as a custom `MoveBase` example in pure BehaviorTree.CPP, except that Nav2
+implements it as a BT plugin wrapping a ROS 2 action client.
 
 ## `controller_server`
 
@@ -661,6 +803,28 @@ Compact version:
 11. controller_server selects controller plugin and computes cmd_vel
 12. tree completes, BtActionServer completes NavigateToPose action result
 ```
+
+## State of the top-level `navigate_to_pose` action while `FollowPath` runs
+
+When `FollowPath` sends a request to `controller_server`, that lower-level
+server may run for a long time while it continuously computes and publishes
+velocity commands.
+
+During that period:
+
+- `FollowPathAction` remains in `RUNNING`
+- the behavior tree remains in `RUNNING`
+- `BtActionServer::executeCallback()` is still running
+- the top-level `navigate_to_pose` action also remains active / running
+
+This does not block the ROS executor thread because `SimpleActionServer`
+launches execution asynchronously after `handle_accepted()`.
+
+So:
+
+- the work is asynchronous
+- but the top-level action is still logically executing
+- therefore its state remains running until the full BT completes
 
 ## Recommended Reading Order in Source
 
