@@ -506,6 +506,20 @@ top-level task action
 -> robot command output
 ```
 
+Another valid mental model:
+
+- `NavigateToPoseNavigator` owns a top-level BT-aware action server
+- that server receives `navigate_to_pose` goals
+- after a goal is accepted, it runs a behavior tree
+- the behavior tree may invoke BT plugins such as `FollowPath` or `Spin`
+- those BT plugins package their inputs into lower-level ROS 2 action goals
+- those lower-level goals are sent to task-specific servers such as:
+  - `controller_server` for `follow_path`
+  - `behavior_server` for `spin`, `wait`, `backup`, `drive_on_heading`
+
+So the top-level task action is decomposed by the BT into lower-level action
+requests.
+
 ## BT Action Node Plugins
 
 These are not navigator plugins.
@@ -655,6 +669,16 @@ This is why `FollowPath` can be thought of as similar to a long-running BT node
 such as a custom `MoveBase` example in pure BehaviorTree.CPP, except that Nav2
 implements it as a BT plugin wrapping a ROS 2 action client.
 
+The same pattern applies to:
+
+- `SpinAction`
+- `WaitAction`
+- `BackUpAction`
+- `DriveOnHeadingAction`
+
+These are BT plugins that wrap ROS 2 action clients, not the final behavior
+algorithm implementations themselves.
+
 ## `controller_server`
 
 Files:
@@ -720,6 +744,119 @@ So the controller plugin is not a standalone ROS node.
 The continuously running node is `controller_server`.
 
 The controller plugin is a loaded algorithm object inside that node.
+
+## `behavior_server`
+
+Files:
+
+- `src/navigation2/nav2_behaviors/src/behavior_server.cpp`
+- `src/navigation2/nav2_behaviors/src/main.cpp`
+
+Role:
+
+- ROS 2 node that hosts a set of behavior action servers
+- loads `nav2_core::Behavior` plugins with `pluginlib`
+- serves actions such as:
+  - `spin`
+  - `backup`
+  - `drive_on_heading`
+  - `wait`
+
+It is launched as a standalone node, just like `bt_navigator`,
+`controller_server`, and `planner_server`.
+
+From launch:
+
+- `navigation_launch.py` starts `behavior_server`
+- `nav2_params.yaml` provides:
+  - `behavior_plugins`
+  - the concrete plugin class for each behavior ID
+
+Example configuration:
+
+```yaml
+behavior_server:
+  ros__parameters:
+    behavior_plugins: ["spin", "backup", "drive_on_heading", "assisted_teleop", "wait"]
+    spin:
+      plugin: "nav2_behaviors::Spin"
+    wait:
+      plugin: "nav2_behaviors::Wait"
+```
+
+At runtime, `behavior_server`:
+
+1. reads `behavior_plugins`
+2. loads the plugin classes with `pluginlib`
+3. configures and activates them
+4. exposes the corresponding ROS 2 actions
+
+### `Behavior Plugin` vs `Behavior Tree Plugin`
+
+This is a common source of confusion.
+
+For `Spin`, there are two separate layers:
+
+- BT plugin:
+  - `nav2_behavior_tree::SpinAction`
+  - this is what the XML node `<Spin .../>` maps to
+  - wraps a ROS 2 action client
+- Behavior plugin:
+  - `nav2_behaviors::Spin`
+  - loaded by `behavior_server`
+  - contains the actual behavior implementation
+
+So:
+
+```text
+XML <Spin .../>
+-> BT plugin SpinAction
+-> ROS 2 action goal sent to "spin"
+-> behavior_server
+-> nav2_behaviors::Spin
+-> publishes cmd_vel while executing
+```
+
+The same structure applies to:
+
+- `Wait`
+- `BackUp`
+- `DriveOnHeading`
+
+### Example: `Spin`
+
+Behavior tree XML:
+
+```xml
+<Spin spin_dist="1.57" error_code_id="{spin_error_code}"/>
+```
+
+BT plugin layer:
+
+- `nav2_behavior_tree/plugins/action/spin_action.cpp`
+- registers XML node ID `"Spin"`
+- creates a `SpinAction` BT node
+- uses ROS action name `"spin"`
+
+Behavior plugin layer:
+
+- `nav2_behaviors/plugins/spin.cpp`
+- exported as `nav2_core::Behavior`
+- loaded by `behavior_server`
+- performs the actual spin behavior
+
+At execution time:
+
+1. the BT ticks `SpinAction`
+2. `SpinAction` reads BT inputs such as `spin_dist`
+3. it fills a ROS action goal and sends it to action `"spin"`
+4. `behavior_server` receives that goal
+5. the corresponding behavior plugin `nav2_behaviors::Spin` executes
+6. during execution, methods such as `onCycleUpdate()` may publish velocity commands
+
+So the XML node does not directly execute `nav2_behaviors::Spin`.
+
+It executes `SpinAction`, which forwards the request to the behavior server.
 
 ## Why controller is a plugin, not a separate node
 
@@ -804,6 +941,17 @@ Compact version:
 12. tree completes, BtActionServer completes NavigateToPose action result
 ```
 
+Related recovery-action branch:
+
+```text
+BT recovery subtree
+-> XML <Spin/> or <Wait/> or <BackUp/>
+-> BT plugin SpinAction / WaitAction / BackUpAction
+-> behavior_server action "spin" / "wait" / "backup"
+-> nav2_behaviors::Spin / Wait / BackUp
+-> cmd_vel or timed behavior execution
+```
+
 ## State of the top-level `navigate_to_pose` action while `FollowPath` runs
 
 When `FollowPath` sends a request to `controller_server`, that lower-level
@@ -867,3 +1015,9 @@ implements `NavigateToPose`.
 
 The action server name for the BT node client/server transport is
 `"follow_path"`.
+
+### `SpinAction` is not `nav2_behaviors::Spin`
+
+- `SpinAction` is the BT XML-facing node in `nav2_behavior_tree`
+- `nav2_behaviors::Spin` is the behavior plugin loaded by `behavior_server`
+- the former sends a ROS action request to the latter
