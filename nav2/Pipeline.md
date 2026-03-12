@@ -952,6 +952,82 @@ BT recovery subtree
 -> cmd_vel or timed behavior execution
 ```
 
+## Parallel Example Flows
+
+These two examples are the best side-by-side comparison for understanding Nav2:
+
+- `FollowPath`: lower-level path execution through `controller_server`
+- `Spin`: recovery / utility behavior through `behavior_server`
+
+### Flow A: `FollowPath`
+
+```text
+External NavigateToPose goal
+-> navigate_to_pose action server
+-> NavigateToPoseNavigator::goalReceived()
+-> blackboard["goal"] = goal_pose
+-> BT XML runs
+-> <ComputePathToPose goal="{goal}" path="{path}" .../>
+-> ComputePathToPoseAction
+-> action client sends goal to "compute_path_to_pose"
+-> planner_server
+-> planner result writes blackboard["path"]
+-> <FollowPath path="{path}" controller_id="{selected_controller}" .../>
+-> FollowPathAction
+-> action client sends goal to "follow_path"
+-> controller_server
+-> selects controller plugin by controller_id
+-> controller plugin computes velocity
+-> controller_server publishes cmd_vel
+```
+
+### Flow B: `Spin`
+
+```text
+External NavigateToPose goal
+-> navigate_to_pose action server
+-> NavigateToPoseNavigator::goalReceived()
+-> behavior tree enters recovery branch
+-> <Spin spin_dist="1.57" error_code_id="{spin_error_code}"/>
+-> SpinAction
+-> BT node reads spin_dist from BT ports / blackboard
+-> action client sends goal to "spin"
+-> behavior_server
+-> behavior_server routes request to nav2_behaviors::Spin
+-> nav2_behaviors::Spin executes behavior
+-> onCycleUpdate() publishes motion commands as needed
+-> behavior finishes and returns action result
+-> SpinAction returns SUCCESS / FAILURE to the behavior tree
+```
+
+### Key Comparison
+
+```text
+FollowPath branch:
+BT XML -> BT action plugin -> controller_server -> controller plugin
+
+Spin branch:
+BT XML -> BT action plugin -> behavior_server -> behavior plugin
+```
+
+So both branches share the same architectural shape:
+
+```text
+behavior tree
+-> BT plugin
+-> lower-level action server
+-> server-internal plugin
+```
+
+The main difference is the downstream server and the plugin category:
+
+- `FollowPath`
+  - downstream server: `controller_server`
+  - internal plugin type: `nav2_core::Controller`
+- `Spin`
+  - downstream server: `behavior_server`
+  - internal plugin type: `nav2_core::Behavior`
+
 ## State of the top-level `navigate_to_pose` action while `FollowPath` runs
 
 When `FollowPath` sends a request to `controller_server`, that lower-level
