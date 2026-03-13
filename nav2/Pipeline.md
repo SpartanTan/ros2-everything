@@ -844,6 +844,7 @@ Behavior plugin layer:
 - exported as `nav2_core::Behavior`
 - loaded by `behavior_server`
 - performs the actual spin behavior
+- `execute()` method of parent class `TimedBehavior` binded into `SimpleActionServer`, will be called asyncly in `goal_handle` of `SimpleActionServer`
 
 At execution time:
 
@@ -852,7 +853,7 @@ At execution time:
 3. it fills a ROS action goal and sends it to action `"spin"`
 4. `behavior_server` receives that goal
 5. the corresponding behavior plugin `nav2_behaviors::Spin` executes
-6. during execution, methods such as `onCycleUpdate()` may publish velocity commands
+6. during execution, `execute()` calls methods such as `onCycleUpdate()` may publish velocity commands
 
 So the XML node does not directly execute `nav2_behaviors::Spin`.
 
