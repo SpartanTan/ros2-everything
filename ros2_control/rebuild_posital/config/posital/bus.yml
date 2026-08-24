@@ -1,0 +1,29 @@
+options:
+  dcf_path: "@BUS_CONFIG_PATH@"
+
+master:
+  node_id: 127
+  package: "canopen_master_driver"
+  driver: "ros2_canopen::MasterDriver"
+  baudrate: 125
+
+nodes:
+  posital_inclinometer:
+    node_id: 1
+    dcf: "AKS-xxx-x-CA01-Hx2-xx-Single-Axis-EXT-v1.2.eds"
+    package: "canopen_proxy_driver"
+    driver: "ros2_canopen::ProxyDriver"
+    heartbeat_producer: 500
+    heartbeat_multiplier: 3.0
+    sdo_timeout_ms: 300
+  
+    tpdo:
+      1:
+        enabled: false
+      2:
+        enabled: true
+        cob_id: "auto"
+        transmission: 0xFE
+        event_timer: 50
+        mapping:
+          - {index: 0x6010, sub_index: 0}

@@ -1,0 +1,24 @@
+pitch_broadcaster:
+  sensor_name:
+    {
+      type: string,
+      default_value: "vehicle_inclinometer",
+      read_only: true,
+      validation: { not_empty<>: [] },
+    }
+
+  frame_id:
+    {
+      type: string,
+      default_value: "posital_inclinometer_link",
+      read_only: true,
+      validation: { not_empty<>: [] },
+    }
+
+  topic_name:
+    {
+      type: string,
+      default_value: "~/pitch",
+      read_only: true,
+      validation: { not_empty<>: [] },
+    }

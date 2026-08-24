@@ -1,0 +1,12 @@
+controller_manager:
+  ros__parameters:
+    update_rate: 50
+
+    posital_pitch_broadcaster:
+      type: rebuild_posital/PitchBroadcaster
+
+posital_pitch_broadcaster:
+  ros__parameters:
+    sensor_name: vehicle_inclinometer
+    frame_id: posital_inclinometer_link
+    topic_name: /posital/pitch

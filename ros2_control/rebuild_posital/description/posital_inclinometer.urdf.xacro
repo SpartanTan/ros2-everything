@@ -1,0 +1,38 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="posital_inclinometer">
+  <xacro:arg name="can_interface" default="pcan1"/>
+  <xacro:arg name="bus_config" default="$(find rebuild_posital)/config/posital/bus.yml"/>
+  <xacro:arg name="master_config" default="$(find rebuild_posital)/config/posital/master.dcf"/>
+  <xacro:arg name="master_bin" default="$(find rebuild_posital)/config/posital/master.bin"/>
+
+  <link name="base_link"/>
+  <link name="posital_inclinometer_link"/>
+  <joint name="posital_mount" type="fixed">
+    <parent link="base_link"/>
+    <child link="posital_inclinometer_link"/>
+  </joint>
+
+  <ros2_control name="PositalInclinometer" type="sensor">
+    <hardware>
+      <plugin>rebuild_posital/PositalHardwareInterface</plugin>
+      <param name="bus_config">$(arg bus_config)</param>
+      <param name="master_config">$(arg master_config)</param>
+      <param name="master_bin">$(arg master_bin)</param>
+      <param name="can_interface_name">$(arg can_interface)</param>
+      <param name="node_id">1</param>
+      <param name="sample_timeout_ms">250</param>
+      <param name="counts_per_degree">100.0</param>
+      <!-- The sensor is mounted so decreasing raw angle means positive vehicle pitch. -->
+      <param name="direction">-1.0</param>
+      <param name="mounting_offset_rad">0.0</param>
+    </hardware>
+    <sensor name="vehicle_inclinometer">
+      <state_interface name="pitch"/>
+      <state_interface name="valid"/>
+      <state_interface name="raw"/>
+      <state_interface name="sample_age"/>
+      <state_interface name="nmt_state"/>
+    </sensor>
+  </ros2_control>
+</robot>
+

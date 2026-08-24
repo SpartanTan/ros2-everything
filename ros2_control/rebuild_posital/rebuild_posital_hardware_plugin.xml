@@ -1,0 +1,7 @@
+<library path="rebuild_posital_hardware">
+  <class 
+    type="rebuild_posital::PositalHardwareInterface"
+    base_class_type="hardware_interface::SensorInterface"
+    name="rebuild_posital/PositalHardwareInterface">
+  </class>
+</library>
